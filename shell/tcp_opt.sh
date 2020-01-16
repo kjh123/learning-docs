@@ -32,24 +32,9 @@ cat > ${EXE_FILE} <<STD
 #1.系统文件备份
 ${sudoroot} cp /etc/sysctl.conf /etc/sysctl.conf.bak.0115
 #2.内核参数添加
-if [ ! -z "net.ipv4.tcp_syncookies = 1" ]; then
-        ${sudoroot} sed -i 's/net.ipv4.tcp_syncookies = 0/net.ipv4.tcp_syncookies = 1/g' /etc/sysctl.conf
-else
-        ${sudoroot} echo 'net.ipv4.tcp_syncookies = 1' >> /etc/sysctl.conf
-fi
-
-if [ ! -z "net.ipv4.tcp_tw_reuse = 0" ]; then
-        ${sudoroot} sed -i 's/net.ipv4.tcp_tw_reuse = 0/net.ipv4.tcp_tw_reuse = 1/g' /etc/sysctl.conf
-else
-        ${sudoroot} echo 'net.ipv4.tcp_tw_reuse = 1' >> /etc/sysctl.conf
-fi
-
-if [ ! -z "net.ipv4.tcp_tw_recycle = 1" ]; then
-        ${sudoroot} sed -i 's/net.ipv4.tcp_tw_recycle = 0/net.ipv4.tcp_tw_recycle = 1/g' /etc/sysctl.conf
-else
-        ${sudoroot} echo 'net.ipv4.tcp_tw_recycle = 1' >> /etc/sysctl.conf
-fi
-
+${sudoroot} echo 'net.ipv4.tcp_syncookies = 1' >> /etc/sysctl.conf
+${sudoroot} echo 'net.ipv4.tcp_tw_reuse = 1' >> /etc/sysctl.conf
+${sudoroot} echo 'net.ipv4.tcp_tw_recycle = 1' >> /etc/sysctl.conf
 ${sudoroot} echo 'net.ipv4.tcp_fin_timeout = 30' >> /etc/sysctl.conf
 ${sudoroot} echo 'net.ipv4.tcp_max_tw_buckets = 15000' >> /etc/sysctl.conf
 
