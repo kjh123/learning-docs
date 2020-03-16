@@ -162,7 +162,7 @@ write tcp 127.0.0.1:8878->127.0.0.1:22705: write: broken pipe
 10.xx.158.xx - - [17/Jan/2020:10:45:07 +0800] "POST /user/getUserDeviceList HTTP/1.1" 499 0 "-" "beegoServer" "-"
 ```
 
-这条日志显示nginx响应状态码为`499`，表示client在请求nginx时，由于client设置了超时时间，而nginx并未在超时时间内响应，导致client主动关闭连接。据相关资料[https://forum.nginx.org/read.php?2,253026,253026],此时，nginx收到499之后，会对api-gateway的连接进行关闭。难道是这个原因？细思又不合理，因为又发现nginx一天中会产生很多诸如499的状态码:
+这条日志显示nginx响应状态码为`499`，表示client在请求nginx时，由于client设置了超时时间，而nginx并未在超时时间内响应，导致client主动关闭连接。据相关资料[nginx 499](https://forum.nginx.org/read.php?2,253026,253026),nginx收到499之后，会对api-gateway的连接进行关闭。难道是这个原因？细思又不合理，因为又发现nginx一天中会产生很多诸如499的状态码:
 
 ```
 ...
@@ -230,11 +230,19 @@ write tcp 127.0.0.1:8878->127.0.0.1:22705: write: broken pipe
   	proxy_set_header  Connection  "";
   ```
 
-解决了以上几个疑惑后，发现断言是不合理的。但是nginx 499状态码在请求中大量出现，panic应该是大量的?
+解决了以上几个疑惑后，发现断言是不合理的。但是nginx 499状态码在请求中大量出现，为什么api-gateway的panic却是偶现?
 
-逐渐接近了真相: [https://stackoverflow.com/questions/43189375/why-is-golang-http-server-failing-with-broken-pipe-when-response-exceeds-8kb]
+逐渐接近了真相: [golang buffer 8kb](https://stackoverflow.com/questions/43189375/why-is-golang-http-server-failing-with-broken-pipe-when-response-exceeds-8kb),产生panic的原因描述如下:
 
-nginx 499出现时，大量的请求都没有达到golang http buffer的4kb,8kb.所以收到nginx连接socket的RST报文时，是不报错的。上述的修改keepalive_timeout为60s并没有实际解决问题，解决方案:
+首先client由于自身业务超时单方面断开连接，而nginx收到client断开连接的请求时，会立即以异常(reset)的方式关闭与api-gateway之前建立的socket连接，并打印499日志。
+
+在大部分情况下,api-gateway服务这时还在等待backend的数据响应。等backend响应数据后，api-gateway会将响应数据按照批次，分批写入golang内置的buffer缓冲区，当缓冲区写满时，会一次性将数据通过socket连接刷到nginx。
+
+第一次通过socket连接将buffer发送给nginx时，nginx作为客户端会向api-gateway的tcp层响应RST报文，所以api-gateway第一次向nginx发送数据是不报错的，但api-gateway的tcp层会设置RST的标记。当api-gateway作为应用层第二次通过底层tcp向nginx发送数据时,socket则会报broken pipe错误。
+
+golang net.http 包内置的buffer大小为4kb,8kb.而业务中大部分499的状态，其实只有100byte左右的响应。但panic时，会发现backend响应的数据报文超过100kb。
+
+上述修改keepalive_timeout为60s并没有实际解决问题，解决方案:
 
 - proxy_ignore_client_abort设为on
 
@@ -249,4 +257,4 @@ nginx 499出现时，大量的请求都没有达到golang http buffer的4kb,8kb.
 - *nginx workerconnection:* https://www.imooc.com/article/19907
 - *nginx 499:* https://forum.nginx.org/read.php?2,253026,253026
 - *nginx proxy:* https://blog.csdn.net/wangkai_123456/article/details/71715852
-- golang buffer 8kb: https://stackoverflow.com/questions/43189375/why-is-golang-http-server-failing-with-broken-pipe-when-response-exceeds-8kb
+- *golang buffer 8kb:* https://stackoverflow.com/questions/43189375/why-is-golang-http-server-failing-with-broken-pipe-when-response-exceeds-8kb
